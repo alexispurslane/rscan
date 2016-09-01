@@ -66,31 +66,27 @@
   (displayln (string-append (format-hash attrs) "\n"))
   (for ([vtn (hash-keys (hash-ref verdict 'scans))]
         [vt (hash-values (hash-ref verdict 'scans))])
-    (define color (if (hash-ref vt 'detected)
-                      "\033[91m"
-                      "\033[92m"))
+    (define color (if (hash-ref vt 'detected) "\033[91m" "\033[92m"))
     (display color)
     (draw-box (format "\033[0mVirus Scanner: ~a~a\n\033[0m└ Verdict: \033[1m~a\033[0m~a"
                       vtn color (hash-ref vt 'result) color))
-    (displayln "\033[0m")
-    (displayln ""))
+    (displayln "\033[0m"))
   (displayln positives))
 
 (define (display-file-verdict name verdict [verbose? #t])
   (when (= (hash-ref verdict 'response_code) 1)
     (if verbose?
-      (display-verbose-verdict name verdict)
-      (let* ([attrs (basic-attrs name verdict)]
-             [p (hash-ref verdict 'positives)]
-             [t (hash-ref verdict 'total)]
-             [positives (gen-positives p t)])
-        (define color (if (> p 0)
-                          "\033[91m"
-                          "\033[92m"))
-        (display color)
-        (draw-box (string-append "\033[0m" (format-hash attrs color) color "\n" "\033[1m" positives color))
-        (displayln "\033[0m")
-        (displayln "")))))
+        (display-verbose-verdict name verdict)
+        (let* ([attrs (basic-attrs name verdict)]
+               [p (hash-ref verdict 'positives)]
+               [t (hash-ref verdict 'total)]
+               [positives (gen-positives p t)])
+          (define color (if (> p 0) "\033[91m" "\033[92m"))
+          (display color)
+          (draw-box (string-append "\033[0m"
+                                   (format-hash attrs color)
+                                   color "\n" "\033[1m" positives color))
+          (displayln "\033[0m")))))
 
 (define file-or-dir (command-line #:args (file-or-dir)
                                   (string->path file-or-dir)))
@@ -105,11 +101,17 @@
 (define shas (if (and (first branch) (not (second branch)))
                  (list (read-files-sha256 (list file-or-dir)))
                  (read-directory-sha256 file-or-dir)))
-(define response (map (λ (names-sha i)
-                        (define vt (apply virustotal-test names-sha))
-                        (define fvt (if (list? (first vt)) (first vt) (list (first vt))))
-                        (define svt (if (list? (second vt)) (second vt) (list (second vt))))
-                        (map display-file-verdict fvt svt
-                             (make-list (length svt) (= (length svt) 1)))
-                        (sleep 15))
-                      shas (range 0 (length shas))))
+(define total-positives (map (λ (names-sha i)
+                               (define vt (apply virustotal-test names-sha))
+                               (define fvt (if (list? (first vt)) (first vt) (list (first vt))))
+                               (define svt (if (list? (second vt)) (second vt) (list (second vt))))
+                               (map display-file-verdict fvt svt
+                                    (make-list (length svt) (= (length svt) 1)))
+                               (unless (= i (- (length shas) 1))
+                                 (sleep 15))
+                               (hash-ref (second vt) 'positives))
+                             shas (range 0 (length shas))))
+
+(define tf (length (filter #λ(> % 0) total-positives)))
+(define color (if (> tf 0) "\033[91m" "\033[92m"))
+(displayln (format "~aInfected files: ~a\033[0m" color tf))
