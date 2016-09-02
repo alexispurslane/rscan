@@ -50,13 +50,21 @@
   (displayln (string-append "└" (make-string wall-len (first (string->list "─"))) "┘")))
 
 (define (byte-format n)
-  (string-append (number->string n) "B"))
+  (define (fnum n) (~r n #:precision 2))
+  (cond [(> n (expt 1024 6)) (format "~a EB" (fnum (/ n (expt 1024 6))))]
+        [(> n (expt 1024 5)) (format "~a PB" (fnum (/ n (expt 1024 5))))]
+        [(> n (expt 1024 4)) (format "~a TB" (fnum (/ n (expt 1024 4))))]
+        [(> n (expt 1024 3)) (format "~a GB" (fnum (/ n (expt 1024 3))))]
+        [(> n (expt 1024 2)) (format "~a MB" (fnum (/ n (expt 1024 2))))]
+        [(> n 1024) (format "~a KB" (fnum (/ n 1024)))]
+        [else (format "~a B" n)]))
 
 (define (gen-positives p t) (format "Positives: ~a% (~a/~a)"
                                     (ceiling (* 100 (/ p t))) p t))
 (define (basic-attrs name verdict) (hash "Date Scanned" (hash-ref verdict 'scan_date)
                                          "Filename" (path->string name)
-                                         "Size" (byte-format (file-size name))))
+                                         "Size" (byte-format (file-size name))
+                                         "Resource" (hash-ref verdict 'resource)))
 
 (define (display-verbose-verdict name verdict)
   (define attrs (basic-attrs name verdict))
@@ -68,10 +76,11 @@
         [vt (hash-values (hash-ref verdict 'scans))])
     (define color (if (hash-ref vt 'detected) "\033[91m" "\033[92m"))
     (display color)
-    (draw-box (format "\033[0mVirus Scanner: ~a~a\n\033[0m└ Verdict: \033[1m~a\033[0m~a"
-                      vtn color (hash-ref vt 'result) color))
-    (displayln "\033[0m"))
-  (displayln positives))
+    (draw-box (format "\033[0mVirus Scanner: ~a (v~a)~a\n\033[0m└ Verdict: \033[1m~a\033[0m~a"
+                      vtn (hash-ref vt 'version) color (hash-ref vt 'result) color))
+    (display "\033[0m"))
+  (define color (if (> p 0) "\033[91m" "\033[92m"))
+  (displayln (format "~a\033[1m~a\033[0m" color positives)))
 
 (define (display-file-verdict name verdict [verbose? #t])
   (when (= (hash-ref verdict 'response_code) 1)
@@ -80,16 +89,35 @@
         (let* ([attrs (basic-attrs name verdict)]
                [p (hash-ref verdict 'positives)]
                [t (hash-ref verdict 'total)]
-               [positives (gen-positives p t)])
+               [positives (gen-positives p t)]
+               [mash-hash (λ (h) (map #λ(hash-set %2 'name %1)
+                                      (hash-keys h)
+                                      (hash-values h)))]
+               [results (sort (filter #λ(hash-ref % 'detected) (mash-hash (hash-ref verdict 'scans)))
+                             #λ(> (string-length (hash-ref %1 'result))
+                                  (string-length (hash-ref %2 'result))))])
           (define color (if (> p 0) "\033[91m" "\033[92m"))
           (display color)
+          (define verdict (if (not (empty? results))
+                             (string-append "\033[0m└ Verdict of "
+                                            (symbol->string (hash-ref (second results) 'name))
+                                            ": \033[1m"
+                                            (hash-ref (second results) 'result) "\033[0m" color)
+                             (string-append "\033[0m└ Verdict: \033[1m\033[92mClean\033[0m" color)))
           (draw-box (string-append "\033[0m"
-                                   (format-hash attrs color)
-                                   color "\n" "\033[1m" positives color))
-          (displayln "\033[0m")))))
+                                   (format-hash attrs color) color "\n" 
+                                   "\033[1m" positives color "\n"
+                                   verdict))
+          (display "\033[0m")))))
 
-(define file-or-dir (command-line #:args (file-or-dir)
-                                  (string->path file-or-dir)))
+(define print-verbose? (make-parameter #t))
+(define file-or-dir (command-line
+                     #:program "rscan"
+                     #:once-each
+                     [("-n" "--not-verbose") "Compile with verbose messages"
+                      (print-verbose? #f)]
+                     #:args (file-or-dir)
+                     (string->path file-or-dir)))
 
 (define branch (list (file-exists? file-or-dir)
                      (directory-exists? file-or-dir)))
@@ -105,13 +133,16 @@
                                (define vt (apply virustotal-test names-sha))
                                (define fvt (if (list? (first vt)) (first vt) (list (first vt))))
                                (define svt (if (list? (second vt)) (second vt) (list (second vt))))
+                               (define verbose? (if (not (print-verbose?))
+                                                    #f
+                                                    (= (length svt) 1))) 
                                (map display-file-verdict fvt svt
-                                    (make-list (length svt) (= (length svt) 1)))
+                                    (make-list (length svt) verbose?))
                                (unless (= i (- (length shas) 1))
                                  (sleep 15))
-                               (hash-ref (second vt) 'positives))
+                               (map #λ(hash-ref % 'positives) svt))
                              shas (range 0 (length shas))))
 
-(define tf (length (filter #λ(> % 0) total-positives)))
+(define tf (length (filter #λ(> % 0) (flatten total-positives))))
 (define color (if (> tf 0) "\033[91m" "\033[92m"))
-(displayln (format "~aInfected files: ~a\033[0m" color tf))
+(displayln (format "~aInfected files: ~a of ~a\033[0m" color tf (length (flatten total-positives))))
