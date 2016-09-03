@@ -76,37 +76,34 @@
 
 (define (display-file-verdict name verdict [verbose? #t])
   (if (= (hash-ref verdict 'response_code) 1)
-      (if verbose?
-          (display-verbose-verdict name verdict)
-          (let* ([attrs (basic-attrs name verdict)]
-                 [p (hash-ref verdict 'positives)]
-                 [t (hash-ref verdict 'total)]
-                 [positives (gen-positives p t)]
-                 [mash-hash (λ (h) (map #λ(hash-set %2 'name %1)
-                                        (hash-keys h)
-                                        (hash-values h)))]
-                 [results (sort (filter #λ(hash-ref % 'detected) (mash-hash (hash-ref verdict 'scans)))
-                                #λ(> (string-length (hash-ref %1 'result))
-                                     (string-length (hash-ref %2 'result))))])
-            (define color (if (> p 0) "\033[91m" "\033[92m"))
-            (display color)
-            (define verdict (if (not (empty? results))
-                                (string-append "\033[0m└ Verdict of "
-                                               (symbol->string (hash-ref (second results) 'name))
-                                               ": \033[1m"
-                                               (hash-ref (second results) 'result) "\033[0m" color)
-                                (string-append "\033[0m└ Verdict: \033[1m\033[92mClean\033[0m" color)))
-            (draw-box (string-append "\033[0m"
-                                     (format-hash attrs color) color "\n" 
-                                     "\033[1m" positives color "\n"
-                                     verdict))
-            (display "\033[0m")))
-      (begin
-        (display "\033[91m")
-        (draw-box (string-append "\033[1mFile Error: "
-                                 (hash-ref verdict 'verbose_msg) ".\033[0m\033[91m"))
-        (display "\033[0m")
-        (exit))))
+    (if verbose?
+        (display-verbose-verdict name verdict)
+        (let* ([attrs (basic-attrs name verdict)]
+               [p (hash-ref verdict 'positives)]
+               [t (hash-ref verdict 'total)]
+               [positives (gen-positives p t)]
+               [mash-hash (λ (h) (map #λ(hash-set %2 'name %1)
+                                      (hash-keys h)
+                                      (hash-values h)))]
+               [results (sort (filter #λ(hash-ref % 'detected) (mash-hash (hash-ref verdict 'scans)))
+                             #λ(> (string-length (hash-ref %1 'result))
+                                  (string-length (hash-ref %2 'result))))])
+          (define color (if (> p 0) "\033[91m" "\033[92m"))
+          (display color)
+          (define verdict (if (not (empty? results))
+                             (string-append "\033[0m└ Verdict of "
+                                            (symbol->string (hash-ref (second results) 'name))
+                                            ": \033[1m"
+                                            (hash-ref (second results) 'result) "\033[0m" color)
+                             (string-append "\033[0m└ Verdict: \033[1m\033[92mClean\033[0m" color)))
+          (draw-box (string-append "\033[0m"
+                                   (format-hash attrs color) color "\n" 
+                                   "\033[1m" positives color "\n"
+                                   verdict))
+          (display "\033[0m")))
+    (begin (displayln (string-append "\033[91m\033[1mFile Error: "
+                                     (hash-ref verdict 'verbose_msg) "\033[0m"))
+           (exit))))
 
 (define print-verbose? (make-parameter #t))
 (define file-or-dir (command-line
